@@ -1,0 +1,125 @@
+bootloader 启动加载程序
+PC机上的启动过程：
+PC机上电自举,执行bios里的程序=>查找第一个启动设备（假设是我们的硬盘）=>找到硬盘的主引导扇区(main boot record)简称MBR,执行里面的代码=>找到我们的活动分区=>加载活动分区中的bootloader程序（GRUB）=>GRUB再去加载linux操作系统内核=>内核开始执行，控制权从GRUB交给Linux内核，GRUB就不再对PC机进行控制了=>内核再去初始化硬件设备(CPU、总线、网卡、中断等等外设）=>内核初始化完成以后会挂载根文件系统=>执行根文件系统中第一个应用程序(我们的1号进程init)=>执行系统中的一些启动脚本=>最后给出一个登录的界面=>输入用户名和密码=>密码输入正确，给你提供一个终端界面=>启动结束。
+
+bootloader => linux kernel => root file system
+
+
+
+
+arm开发板的启动过程：
+开发板上电,CPU到0地址取指令执行=>0地址一般会是我们的nandflash设备，也就是说开发板上电自动取nandflash中的程序执行（这些程序我们需要事先烧写到nand里）,如果开发板支持SD卡启动，上电执行的是SD卡里的程序=>nand或SD卡里的程序就是bootloader程序=>bootloader程序先完成boot启动功能（初始化一个最小化的系统，为内核的执行提供必要的运行环境）=>bootloader程序接着继续完成它的loader加载功能=>找到nand上烧写的linux内核程序，把它加载到内存上并执行它=>后面内核的启动过程与PC机上相似。
+
+上面的初始化最小化系统：
+1.关闭中断
+.global _start
+_start:
+	@关中断
+	mrs r0, cpsr
+	orr r0, r0, #0xc0
+	msr cpsr, r0
+2.关看门狗
+	@关看门狗
+	ldr r0, =0xE2700000
+	mov r1, #0
+	str r1, [r0]	
+
+3.初始化CPU时钟（Cortex-A8核心需要1GHz的时钟频率)
+4.初始化UART串口
+5.初始化内存SDRAM
+6.初始化NANDflash
+以上设备是开发板启动阶段所必须初始化好的设备，所以称为最小化系统。这个就是boot阶段要做的事情。
+
+loader阶段就是找到nandflash上的linux内核程序，把它拷贝到内存上并执行。
+
+
+
+
+开发板的构件有哪些？
+分成两部分：
+1.底板（大的板子）
+
+
+2.核心板（小的板子）
+S5PV210 arm开发板所用的soc,三星公司生产
+SDRAM，4个， 每一片128M容量，总共是512M大小
+nandflash芯片， 一个， 128M容量 SLC
+晶振， 3个  24MHz
+高清输出口
+
+
+nandflash芯片
+1.按块(block)为单位擦除，就是全部放电，上面全部变成0xff
+2.写和读都是按页(page)为单位，读也可以按字节，但是按页读要更慢一些。
+3.nandflash要先擦除(erase)再写，因为写(program)只能让1=>0，不能反过来0=>1。
+4.nand上不能直接执行程序，而norflash可以直接执行程序。
+5.norflash有地址线，nandflash没有地址线。
+6.norflash一般容量比nand要小很多(nand可以做得很大,几个G)，成本比norflash低很多。
+7.nandflash擦写次数一般为1W~10W次。
+8.nandflash因为数据密度很大，所以生产工艺决定了，它即使刚出厂也会有坏块。而且在使用过程中还会继续产生坏块。
+9.我们的nandflash是128MB大小，SLC型。有一些NAND是MLC型。
+	SLC:single level cell  一个存储单元（cell)存一个位，寿命长。
+	MLC:multil level cell  一个存储单元（cell)存多个位，结构复杂所以寿命短。
+
+
+我们的bootloader程序的加载过程(loader过程）：
+A.nandflash的分区信息：
+定义在linux内核源码包linux-2.6.35.7/drivers/mtd/nand/s3c_nand.c:
+struct mtd_partition s3c_partition_info[] = {
+	{
+		.name		= "misc",
+		.offset		= (768*SZ_1K),          /* for bootloader */
+		.size		= (256*SZ_1K),
+		.mask_flags	= MTD_CAP_NANDFLASH,
+	},
+	{
+		.name		= "recovery",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= (5*SZ_1M),
+	},
+	{
+		.name		= "kernel",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= (5*SZ_1M),
+	},
+	{
+		.name		= "ramdisk",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= (3*SZ_1M),
+	},
+#ifdef CONFIG_MACH_MINI210
+	{
+		.name		= "system",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= MTDPART_SIZ_FULL,
+	}
+}
+
+B.启动流程：
+1.开发板上电，固化在CPU的iROM中的程序先执行。
+2.iROM中的程序首先根据启动方式的拨断开关，选择相应的启动设备（nand或者SD卡）
+3.我们的bootloader是烧写在nand上，所以iROM中的程序会到nand芯片的最开头加载我们的bootloader程序到iRAM中去执行。
+4.iRAM中执行程序有16K大小限制，我们的bootloader程序有24K，大于这个限制，所以需要自拷贝，把自身先拷贝到SDRAM上才能完整的执行完。
+5.在链接脚本link.lds中，我们要保证我们的关键的初始化代码是包含在程序的头16K中，这些代码是：
+		start.o (.text)	
+		clock.o (.text)
+		mem_setup.o (.text)
+		copymyself.o (.text)
+		nand.o (.text)
+6.当iROM中的程序把上面这些头16k中的初始化代码放到iRAM中执行以后，CPU时钟、内存、nand设备被初始化，同时bootloader程序完成自拷贝，把自身搬运到SDRAM上去执行,这样超出16K的程序也得到执行了。
+7.接下来bootloader程序要完成它的loader功能：
+	a.到nand的6M起始位置上去复制5M大小的内核程序到SDRAM的0x30000000地址上去。
+	b.准备好内核启动所需的三个参数，第一个参数固定为0，第二个参数是开发板板号3466，第三个参数是内核启动参数。
+	c.使用函数指针方式，来启动内核程序
+8.只要内核的三个参数是正确的，内核就可以正常启动了。
+9.其他的一些关键设置：
+	a.内核要被加载到内存的0x20008000地址
+	b.内核启动参数的地址固定在0x20000100处
+
+烧写命令：
+nand erase 0x0 0xc0000
+loadb 加载到内存的0x21000000地址上
+nand write 0x21000000 0x0 0x6000
+拨断开关设为nand启动，启动开发板。
+
+
