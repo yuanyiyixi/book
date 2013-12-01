@@ -1,0 +1,57 @@
+C语言求解圆面积（面向过程）：
+
+int getradius(struct Point a, struct Point b)
+{
+
+}
+
+int getArea(int r)
+{
+
+}
+
+int main()
+{
+	int area;
+	area  = get Area(100):
+	struct Point a = {1, 2};
+	struct Point b = {-100, 20};
+
+	area = get Area(getradius(a, b));
+}
+
+C++求解这个问题（面向对象）：
+struct Point{
+	int x;
+	int y;
+};
+
+struct Circle{
+	int radius;//属性， 成员变量
+	//方法， 成员函数
+	int getAreaFromRadius(int radius);
+	int getAreaFromPoint(Point a, Point b);
+};
+
+int Circle::getAreaFromRadius(int radius)
+{
+
+}
+
+void goo()
+{
+	int radius;
+	printf("helloworld, radius=%d\n", Circle::radius);
+}
+
+//顶层函数
+int main()//客户端
+{
+	Point a(10, 20), b(1, -3);
+	Circle c, d, e; //对象c是一个服务器
+	c.getAreaFromRadius(100);
+	d.getAreaFromRadius(50);
+	c.getAreaFromPoint(a, b);
+}
+	c.getAreaFromPoint(a, b);
+}
